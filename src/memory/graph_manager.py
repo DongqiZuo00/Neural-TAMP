@@ -134,6 +134,124 @@ def validate_graph_schema(G: nx.DiGraph):
 
     return len(errors) == 0, errors
 
+def sync_bidirectional_edges(G: nx.DiGraph) -> None:
+    edges = list(G.edges(data=True))
+    to_remove = []
+    to_add = []
+
+    for u, v, data in edges:
+        relation = data.get("relation")
+        if relation in ACTION_RELATIONS:
+            continue
+        if relation in DERIVED_RELATIONS:
+            mirror = MIRROR_RELATION.get(relation)
+            if mirror is None or not G.has_edge(v, u) or G.edges[v, u].get("relation") != mirror:
+                to_remove.append((u, v))
+        elif relation in CANONICAL_RELATIONS:
+            mirror = MIRROR_RELATION.get(relation)
+            if mirror is None:
+                continue
+            if not G.has_edge(v, u):
+                new_attrs = dict(data)
+                new_attrs["relation"] = mirror
+                to_add.append((v, u, new_attrs))
+
+    if to_remove:
+        G.remove_edges_from(to_remove)
+    for u, v, attrs in to_add:
+        G.add_edge(u, v, **attrs)
+
+def validate_graph_schema(G: nx.DiGraph):
+    errors = []
+
+    for u, v, data in G.edges(data=True):
+        relation = data.get("relation")
+        if relation in ACTION_RELATIONS:
+            continue
+        if relation in CANONICAL_RELATIONS:
+            mirror = MIRROR_RELATION.get(relation)
+            if mirror and (not G.has_edge(v, u) or G.edges[v, u].get("relation") != mirror):
+                errors.append({
+                    "type": "MIRROR_MISSING",
+                    "edge": (u, v, relation),
+                    "expected_mirror": (v, u, mirror),
+                })
+        elif relation in DERIVED_RELATIONS:
+            mirror = MIRROR_RELATION.get(relation)
+            if mirror and (not G.has_edge(v, u) or G.edges[v, u].get("relation") != mirror):
+                errors.append({
+                    "type": "ORPHAN_DERIVED",
+                    "edge": (u, v, relation),
+                    "expected_canonical": (v, u, mirror),
+                })
+
+    for node_id, data in G.nodes(data=True):
+        if data.get("type") != "object":
+            continue
+        derived_out = {
+            Relation.IN_ROOM: [],
+            Relation.IN_CONTAINER: [],
+            Relation.ON_TOP_OF: [],
+            Relation.HELD_BY: [],
+        }
+        for _, v, edata in G.out_edges(node_id, data=True):
+            rel = edata.get("relation")
+            if rel in derived_out:
+                derived_out[rel].append((node_id, v))
+
+        for rel, edges in derived_out.items():
+            if len(edges) > 1:
+                errors.append({
+                    "type": "CARDINALITY_VIOLATION",
+                    "node": node_id,
+                    "relation": rel,
+                    "edges": edges,
+                })
+
+        if derived_out[Relation.IN_CONTAINER] and derived_out[Relation.ON_TOP_OF]:
+            errors.append({
+                "type": "MUTEX_VIOLATION",
+                "node": node_id,
+                "relations": [Relation.IN_CONTAINER, Relation.ON_TOP_OF],
+            })
+        if derived_out[Relation.HELD_BY] and (derived_out[Relation.IN_CONTAINER] or derived_out[Relation.ON_TOP_OF]):
+            errors.append({
+                "type": "MUTEX_VIOLATION",
+                "node": node_id,
+                "relations": [Relation.HELD_BY, Relation.IN_CONTAINER, Relation.ON_TOP_OF],
+            })
+
+    for node_id, data in G.nodes(data=True):
+        if data.get("type") != "object":
+            continue
+        state = data.get("state")
+        if not isinstance(state, dict):
+            errors.append({
+                "type": "STATE_INVALID",
+                "node": node_id,
+                "state": state,
+                "reason": "state must be a dict with open_state and held",
+            })
+            continue
+        open_state = state.get("open_state")
+        held = state.get("held")
+        if open_state not in VALID_OPEN_STATES:
+            errors.append({
+                "type": "STATE_INVALID",
+                "node": node_id,
+                "state": state,
+                "reason": "invalid open_state",
+            })
+        if not isinstance(held, bool):
+            errors.append({
+                "type": "STATE_INVALID",
+                "node": node_id,
+                "state": state,
+                "reason": "held must be bool",
+            })
+
+    return len(errors) == 0, errors
+
 class GraphManager:
     def __init__(self, save_dir="Neural-TAMP/memory_data", debug=False):
         self.save_dir = save_dir
