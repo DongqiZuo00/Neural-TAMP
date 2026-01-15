@@ -100,14 +100,17 @@ Please output the JSON execution plan.
 
             for obj in room_objs:
                 state_info = ""
-                if "closed" in obj.state.lower(): state_info = "[State: CLOSED]"
-                elif "open" in obj.state.lower(): state_info = "[State: OPEN]"
+                if isinstance(obj.state, dict):
+                    if obj.state.get("open_state") == "closed":
+                        state_info = "[State: CLOSED]"
+                    elif obj.state.get("open_state") == "open":
+                        state_info = "[State: OPEN]"
                 
                 relation_desc = ""
                 for edge in scene_graph.edges:
-                    if edge.source_id == obj.id and edge.relation in ["inside", "on"]:
-                         container_id = edge.target_id
-                         relation_desc = f"(is {edge.relation} {container_id})"
+                    if edge.target_id == obj.id and edge.relation in ["inside", "on"]:
+                        container_id = edge.source_id
+                        relation_desc = f"(is {edge.relation} {container_id})"
 
                 lines.append(f"  - {obj.label} (ID: {obj.id}) {state_info} {relation_desc}")
             lines.append("")

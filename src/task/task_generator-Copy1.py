@@ -95,7 +95,7 @@ class TaskGenerator:
                 if self._is_receptacle(node.label):
                     profile['receptacles'].append(node)
                     # 检测 closed 状态 (适配 NetworkX 转换后的 Node)
-                    if node.state and "closed" in str(node.state).lower():
+                    if isinstance(node.state, dict) and node.state.get("open_state") == "closed":
                         profile['closed_containers'].append(node)
 
         # 分析房间密度
@@ -207,7 +207,7 @@ class TaskGenerator:
         # 2. 状态攻击: 优先放入 Closed 容器
         score_state = 0.0
         # 如果 Dest 是关着的，加分 (诱导 Agent 去开门)
-        if dest.state and "closed" in str(dest.state).lower(): 
+        if isinstance(dest.state, dict) and dest.state.get("open_state") == "closed":
             score_state += 1.0
         
         # 3. 语义反常识
@@ -258,9 +258,9 @@ class TaskGenerator:
 
     def _virtual_move(self, graph, obj_id, dest_id):
         # 移除旧边
-        graph.edges = [e for e in graph.edges if e.source_id != obj_id]
+        graph.edges = [e for e in graph.edges if e.target_id != obj_id]
         # 添加新边
-        graph.add_edge(Edge(obj_id, dest_id, "on")) # 简化假设为 on
+        graph.add_edge(Edge(dest_id, obj_id, "on")) # 简化假设为 on
         # 更新 room_id
         if dest_id in graph.nodes:
             graph.nodes[obj_id].room_id = graph.nodes[dest_id].room_id
