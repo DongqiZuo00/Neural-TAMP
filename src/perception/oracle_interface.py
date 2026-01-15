@@ -54,7 +54,7 @@ class OracleInterface:
                     id=room_id, 
                     label=room_type, 
                     pos=center_pos, 
-                    state="static",
+                    state={"open_state": "none", "held": False},
                     geometry={"polygon": poly_pts, "area": area, "bounds": bounds},
                     room_id=None # 房间本身不属于其他房间
                 ))
@@ -69,10 +69,9 @@ class OracleInterface:
             
             pos = obj["position"]
             # 状态处理 (Open/Closed, Pickupable)
-            states = []
-            if obj.get("isOpen"): states.append("open")
-            if obj.get("isPickedUp"): states.append("held")
-            state_str = ", ".join(states) if states else "default"
+            is_open = obj.get("isOpen")
+            open_state = "open" if is_open else "closed" if is_open is not None else "none"
+            state_dict = {"open_state": open_state, "held": bool(obj.get("isPickedUp"))}
 
             # 判定房间归属 (核心逻辑)
             ox, oz = pos["x"], pos["z"]
@@ -90,7 +89,7 @@ class OracleInterface:
                 label=obj["objectType"],
                 pos=(pos["x"], pos["y"], pos["z"]),
                 bbox=obj["axisAlignedBoundingBox"],
-                state=state_str,
+                state=state_dict,
                 room_id=assigned_room_id # <--- 关键赋值
             )
             graph.add_node(obj_node)
