@@ -1,0 +1,25 @@
+# Python / Jupyter
+__pycache__/
+*.pyc
+*.pyo
+*.log
+.ipynb_checkpoints/
+*.ipynb_checkpoints/
+
+# Envs
+venv/
+.venv/
+tamp_env/
+
+# Data / outputs / artifacts (DON'T COMMIT)
+data/
+memory_data/
+models/
+vis_output/
+runs/
+wandb/
+checkpoints/
+outputs/
+
+# OS
+.DS_Store
