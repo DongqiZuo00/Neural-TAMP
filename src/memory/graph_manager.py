@@ -33,7 +33,7 @@ def sync_bidirectional_edges(G: nx.DiGraph) -> None:
             mirror = MIRROR_RELATION.get(relation)
             if mirror is None:
                 continue
-            if not G.has_edge(v, u):
+            if not G.has_edge(v, u) or G.edges[v, u].get("relation") != mirror:
                 new_attrs = dict(data)
                 new_attrs["relation"] = mirror
                 to_add.append((v, u, new_attrs))
@@ -153,8 +153,9 @@ class GraphManager:
         
         # 2. 添加实体节点
         for nid, node in oracle_graph.nodes.items():
+            node_type = "room" if nid.startswith("Room|") or node.label == "Room" else "object"
             # 将原始 Node 对象存入 raw_node 以便兼容导出
-            self.G.add_node(nid, type='object', pos=node.pos, label=node.label, 
+            self.G.add_node(nid, type=node_type, pos=node.pos, label=node.label, 
                             state=normalize_state(node.state), room_id=node.room_id, raw_node=node)
             
         # 3. 添加物理关系 (canonical)

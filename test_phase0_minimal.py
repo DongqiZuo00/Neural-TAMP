@@ -26,6 +26,7 @@ def main():
     sg.add_edge(Edge("room_1", "table_1", Relation.CONTAINS))
     sg.add_edge(Edge("room_1", "fridge_1", Relation.CONTAINS))
     sg.add_edge(Edge("fridge_1", "apple_1", Relation.INSIDE))
+    sg.add_edge(Edge("apple_1", "fridge_1", Relation.NEAR))
 
     manager = GraphManager(debug=True)
     manager.override_global_graph(sg)
