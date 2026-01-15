@@ -1,5 +1,5 @@
 from typing import List, Dict
-from src.core.graph_schema import SceneGraph
+from src.core.graph_schema import SceneGraph, Relation
 
 class PromptBuilder:
     def __init__(self):
@@ -108,7 +108,7 @@ Please output the JSON execution plan.
                 
                 relation_desc = ""
                 for edge in scene_graph.edges:
-                    if edge.target_id == obj.id and edge.relation in ["inside", "on"]:
+                    if edge.target_id == obj.id and edge.relation in [Relation.INSIDE, Relation.ON]:
                         container_id = edge.source_id
                         relation_desc = f"(is {edge.relation} {container_id})"
 

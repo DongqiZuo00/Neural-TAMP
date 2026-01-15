@@ -3,7 +3,7 @@ import matplotlib.patches as patches
 import os
 import math
 import numpy as np
-from src.core.graph_schema import CANONICAL_RELATIONS, PHYSICAL_RELATIONS
+from src.core.graph_schema import CANONICAL_RELATIONS, PHYSICAL_RELATIONS, Relation
 
 class BEVVisualizer:
     def __init__(self, save_dir="Neural-TAMP/vis_output"):
@@ -57,7 +57,7 @@ class BEVVisualizer:
         for edge in scene_graph.edges:
             if edge.relation not in relation_filter:
                 continue
-            if edge.relation == "contains": continue # 不画房间包含关系，太乱了
+            if edge.relation == Relation.CONTAINS: continue # 不画房间包含关系，太乱了
             
             if edge.source_id in scene_graph.nodes and edge.target_id in scene_graph.nodes:
                 n1 = scene_graph.nodes[edge.source_id]

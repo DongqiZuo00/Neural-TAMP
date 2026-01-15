@@ -18,6 +18,9 @@ class Relation:
     INITIATES = "initiates"
     TARGETS = "targets"
 
+    # Geometric auxiliary relations
+    NEAR = "near"
+
 MIRROR_RELATION = {
     Relation.CONTAINS: Relation.IN_ROOM,
     Relation.INSIDE: Relation.IN_CONTAINER,
@@ -46,6 +49,10 @@ DERIVED_RELATIONS = {
 ACTION_RELATIONS = {
     Relation.INITIATES,
     Relation.TARGETS,
+}
+
+GEOMETRIC_RELATIONS = {
+    Relation.NEAR,
 }
 
 PHYSICAL_RELATIONS = CANONICAL_RELATIONS | DERIVED_RELATIONS

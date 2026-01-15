@@ -1,6 +1,6 @@
 import numpy as np
 from matplotlib.path import Path
-from src.core.graph_schema import SceneGraph, Node, Edge
+from src.core.graph_schema import SceneGraph, Node, Edge, Relation
 
 class OracleInterface:
     def __init__(self, env):
@@ -96,6 +96,6 @@ class OracleInterface:
             
             # 添加 Room -> contains -> Object 的 Edge
             if assigned_room_id:
-                graph.add_edge(Edge(source_id=assigned_room_id, target_id=obj_node.id, relation="contains"))
+                graph.add_edge(Edge(source_id=assigned_room_id, target_id=obj_node.id, relation=Relation.CONTAINS))
 
         return graph
