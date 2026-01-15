@@ -249,4 +249,12 @@ class GraphManager:
                 dist = np.linalg.norm(pos_u - pos_v)
                 
                 if dist < 1.0: # 简化阈值
+                    if self.G.has_edge(u, v):
+                        existing_relation = self.G.edges[u, v].get("relation")
+                        if existing_relation not in GEOMETRIC_RELATIONS:
+                            continue
+                    if self.G.has_edge(v, u):
+                        reverse_relation = self.G.edges[v, u].get("relation")
+                        if reverse_relation not in GEOMETRIC_RELATIONS:
+                            continue
                     self.G.add_edge(u, v, relation=Relation.NEAR, distance=float(dist))
