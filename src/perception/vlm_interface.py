@@ -149,7 +149,7 @@ class VLMInterface:
                     label=label,
                     pos=(0.0, 0.0, 0.0), # 占位，待 depth 填充
                     bbox=obj.get("box_2d", [0,0,0,0]), # 这里存的是 2D 框
-                    state=obj.get("state", "default")
+                    state=obj.get("state")
                 )
                 sg.add_node(node)
                 

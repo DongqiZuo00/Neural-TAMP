@@ -1,5 +1,6 @@
 import networkx as nx
 import copy
+from src.core.graph_schema import Relation, normalize_state
 
 class RuleBasedDynamics:
     """
@@ -26,6 +27,8 @@ class RuleBasedDynamics:
                 dest_id = action_dict.get('receptacle_id')
                 return self._rule_place(next_graph, target_id, dest_id)
             elif action_type == "NavigateTo":
+                if target_id in next_graph and "pos" in next_graph.nodes[target_id]:
+                    next_graph.nodes[self.robot_id]["pos"] = next_graph.nodes[target_id]["pos"]
                 return next_graph, True, f"Navigated to {target_id}"
             elif action_type in ["Open", "Close"]:
                 return self._rule_state_change(next_graph, target_id, action_type)
@@ -38,13 +41,18 @@ class RuleBasedDynamics:
         if not G.has_node(obj_id): return G, False, "Target not found"
         
         # [Effect] 1. 断开物理连接 (on, inside)
-        edges_to_remove = [(u, v) for u, v, d in G.in_edges(obj_id, data=True) 
-                           if d.get('relation') in ['on', 'inside']]
+        edges_to_remove = [
+            (u, v)
+            for u, v, d in G.in_edges(obj_id, data=True)
+            if d.get("relation") in [Relation.ON, Relation.INSIDE]
+        ]
         G.remove_edges_from(edges_to_remove)
         
         # [Effect] 2. 建立 Holding 连接
-        G.add_edge(self.robot_id, obj_id, relation='holding')
-        G.nodes[obj_id]['state'] = 'held'
+        G.add_edge(self.robot_id, obj_id, relation=Relation.HOLDING)
+        state = normalize_state(G.nodes[obj_id].get("state"))
+        state["held"] = True
+        G.nodes[obj_id]["state"] = state
         
         # [Effect] 3. 位置同步
         if self.robot_id in G:
@@ -54,12 +62,15 @@ class RuleBasedDynamics:
 
     def _rule_place(self, G, obj_id, dest_id):
         # 检查是否持有
-        if not G.has_edge(self.robot_id, obj_id): return G, False, "Not holding object"
+        if not G.has_edge(self.robot_id, obj_id) or G.edges[self.robot_id, obj_id].get("relation") != Relation.HOLDING:
+            return G, False, "Not holding object"
         
         # [Effect] 移除 Holding，建立 On
         G.remove_edge(self.robot_id, obj_id)
-        G.add_edge(obj_id, dest_id, relation='on')
-        G.nodes[obj_id]['state'] = 'default'
+        G.add_edge(dest_id, obj_id, relation=Relation.ON)
+        state = normalize_state(G.nodes[obj_id].get("state"))
+        state["held"] = False
+        G.nodes[obj_id]["state"] = state
         
         # 位置更新 (简单堆叠)
         if dest_id in G:
@@ -71,6 +82,11 @@ class RuleBasedDynamics:
 
     def _rule_state_change(self, G, obj_id, action):
         if not G.has_node(obj_id): return G, False, "Target not found"
-        new_state = 'open' if action == 'Open' else 'closed'
-        G.nodes[obj_id]['state'] = new_state
+        state = G.nodes[obj_id].get("state")
+        if not isinstance(state, dict) or "open_state" not in state:
+            return G, False, "Target not openable"
+        state = normalize_state(state)
+        new_state = "open" if action == "Open" else "closed"
+        state["open_state"] = new_state
+        G.nodes[obj_id]["state"] = state
         return G, True, new_state
