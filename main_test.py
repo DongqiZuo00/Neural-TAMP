@@ -111,10 +111,12 @@ def main():
             action_results = []
             subgoal_success = True
             subgoal_executable = True
+            reject_reason = ""
 
             if not actions:
                 subgoal_success = False
                 subgoal_executable = False
+                reject_reason = "no_actions_generated"
             else:
                 for action in actions:
                     success, error_msg = execute_action(env, adapter, action, memory.G, scene_cache=scene_cache)
@@ -130,6 +132,7 @@ def main():
                     if not _is_executable_error(error_msg):
                         subgoal_executable = False
                     if not success:
+                        reject_reason = error_msg or "action_failed"
                         break
 
             memory.override_global_graph(oracle.get_hierarchical_graph())
@@ -142,6 +145,7 @@ def main():
                     "action_results": action_results,
                     "success": subgoal_success,
                     "executable": subgoal_executable,
+                    "reject_reason": reject_reason,
                     "G_t": export_graph_canonical(graph_t),
                     "G_t1": export_graph_canonical(graph_t1),
                     "delta": graph_diff(graph_t, graph_t1),
@@ -154,7 +158,8 @@ def main():
                 success_subgoals += 1
 
             if not subgoal_success:
-                print(f"   ❌ Subgoal rejected: {subgoal}")
+                reason_note = f" ({reject_reason})" if reject_reason else ""
+                print(f"   ❌ Subgoal rejected: {subgoal}{reason_note}")
                 task_failed = True
                 break
 
