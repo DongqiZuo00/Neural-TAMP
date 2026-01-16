@@ -95,7 +95,7 @@ def _random_action(graph: nx.DiGraph, rng: random.Random) -> dict[str, Any]:
     return action_dict
 
 
-def _execute_action(env, adapter: ProcTHORActionAdapter, action: dict[str, Any], graph: nx.DiGraph) -> tuple[bool, str]:
+def execute_action(env, adapter: ProcTHORActionAdapter, action: dict[str, Any], graph: nx.DiGraph) -> tuple[bool, str]:
     controller = env.controller
 
     ok, reason = adapter.validate_action_dict(action)
@@ -145,7 +145,7 @@ def _collect_scene(
     for t in range(steps):
         graph_t = copy.deepcopy(manager.G)
         action = _random_action(graph_t, rng)
-        success, error_msg = _execute_action(env, adapter, action, graph_t)
+        success, error_msg = execute_action(env, adapter, action, graph_t)
 
         sg_next = oracle.get_hierarchical_graph()
         manager.override_global_graph(sg_next)
