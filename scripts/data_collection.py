@@ -11,6 +11,7 @@ from typing import Any
 import networkx as nx
 
 from src.core.graph_schema import CANONICAL_RELATIONS, Relation, normalize_state
+from src.env.action_adapter import ProcTHORActionAdapter
 from src.memory.graph_manager import GraphManager, sync_bidirectional_edges, validate_graph_schema
 
 
@@ -94,39 +95,40 @@ def _random_action(graph: nx.DiGraph, rng: random.Random) -> dict[str, Any]:
     return action_dict
 
 
-def _execute_action(env, action: dict[str, Any], graph: nx.DiGraph) -> tuple[bool, str]:
-    controller = env.controller
-    action_type = action.get("action")
-    target = action.get("target")
+def get_reachable_positions(controller) -> list[dict[str, Any]]:
+    try:
+        event = controller.step(action="GetReachablePositions")
+    except Exception as exc:
+        print(f"[Reachable] Failed to query positions: {exc}")
+        return []
+    positions = event.metadata.get("actionReturn") or []
+    if not isinstance(positions, list):
+        print("[Reachable] Unexpected response for reachable positions")
+        return []
+    return positions
 
-    if action_type == "NavigateTo":
-        if target in graph and "pos" in graph.nodes[target]:
-            x, y, z = graph.nodes[target]["pos"]
-            event = controller.step(
-                action="TeleportFull",
-                x=float(x),
-                y=float(y),
-                z=float(z),
-                rotation=dict(x=0, y=0, z=0),
-                horizon=0,
-                standing=True,
-            )
-        else:
-            event = controller.step(action="MoveAhead")
-    elif action_type == "Open":
-        event = controller.step(action="OpenObject", objectId=target)
-    elif action_type == "Close":
-        event = controller.step(action="CloseObject", objectId=target)
-    elif action_type == "PickUp":
-        event = controller.step(action="PickupObject", objectId=target)
-    elif action_type == "PutObject":
-        event = controller.step(
-            action="PutObject",
-            objectId=target,
-            receptacleObjectId=action.get("receptacle_id"),
-        )
-    else:
-        return False, f"Unknown action: {action_type}"
+
+def execute_action(
+    env,
+    adapter: ProcTHORActionAdapter,
+    action: dict[str, Any],
+    graph: nx.DiGraph,
+    scene_cache: dict[str, Any] | None = None,
+) -> tuple[bool, str]:
+    controller = env.controller
+
+    ok, reason = adapter.validate_action_dict(action)
+    if not ok:
+        return False, f"INVALID_ACTION_SCHEMA: {reason}"
+
+    thor_kwargs, ok, reason = adapter.to_thor_step(action, graph, scene_cache=scene_cache)
+    if not ok:
+        return False, f"INVALID_ACTION_SCHEMA: {reason}"
+
+    try:
+        event = controller.step(**thor_kwargs)
+    except Exception as exc:
+        raise RuntimeError(f"API_SCHEMA_BUG: {exc}") from exc
 
     success = bool(event.metadata.get("lastActionSuccess"))
     error_msg = event.metadata.get("errorMessage") or ""
@@ -141,11 +143,13 @@ def _collect_scene(
     rng: random.Random,
     stats: Counter,
     error_log: list[dict[str, Any]],
+    scene_cache: dict[str, Any],
 ) -> tuple[int, int]:
     from src.perception.oracle_interface import OracleInterface
 
     oracle = OracleInterface(env)
     manager = GraphManager(debug=False)
+    adapter = ProcTHORActionAdapter()
 
     sg = oracle.get_hierarchical_graph()
     manager.override_global_graph(sg)
@@ -161,7 +165,7 @@ def _collect_scene(
     for t in range(steps):
         graph_t = copy.deepcopy(manager.G)
         action = _random_action(graph_t, rng)
-        success, error_msg = _execute_action(env, action, graph_t)
+        success, error_msg = execute_action(env, adapter, action, graph_t, scene_cache=scene_cache)
 
         sg_next = oracle.get_hierarchical_graph()
         manager.override_global_graph(sg_next)
@@ -224,6 +228,7 @@ def run_rollouts(
             for scene_index in range(num_scenes):
                 env.change_scene(scene_index)
                 scene_id = f"ProcTHOR-Train-{scene_index}"
+                scene_cache = {"reachable_positions": get_reachable_positions(env.controller)}
                 steps, valid = _collect_scene(
                     env=env,
                     scene_id=scene_id,
@@ -232,6 +237,7 @@ def run_rollouts(
                     rng=rng,
                     stats=stats,
                     error_log=error_log,
+                    scene_cache=scene_cache,
                 )
                 total_steps += steps
                 total_valid += valid
