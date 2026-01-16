@@ -11,6 +11,7 @@ if current_dir not in sys.path:
 
 from src.env.procthor_wrapper import ProcTHOREnv
 from src.env.action_adapter import ProcTHORActionAdapter
+from src.env.action_visibility import ensure_object_visible
 from src.memory.graph_manager import GraphManager
 from src.perception.oracle_interface import OracleInterface
 from src.task.task_generator import TaskGenerator
@@ -119,6 +120,24 @@ def main():
                 reject_reason = "no_actions_generated"
             else:
                 for action in actions:
+                    target_id = action.get("target")
+                    if target_id:
+                        visible = ensure_object_visible(env.controller, target_id)
+                        if not visible:
+                            success = False
+                            error_msg = "object_not_visible_after_scan"
+                            action_results.append(
+                                {
+                                    "action": action,
+                                    "success": success,
+                                    "error_msg": error_msg,
+                                }
+                            )
+                            subgoal_success = False
+                            subgoal_executable = False
+                            reject_reason = error_msg
+                            break
+
                     success, error_msg = execute_action(env, adapter, action, memory.G, scene_cache=scene_cache)
                     action_results.append(
                         {

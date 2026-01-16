@@ -71,12 +71,15 @@ RULES:
 - Use exact Object IDs from the Scene description (e.g., "Fridge|1").
 - If a sub-goal implies multiple actions (e.g., "Get the apple" -> Navigate + Pick), generate both.
 - Ensure preconditions (must be at location to Pick/Open).
+- HARD RULE: For every non-NavigateTo action, always insert a NavigateTo(target_id) immediately before it.
 
 EXAMPLE OUTPUT FORMAT (JSON):
 {{
   "actions": [
     {{"action": "NavigateTo", "target": "Fridge|1"}},
-    {{"action": "Open", "target": "Fridge|1"}}
+    {{"action": "Open", "target": "Fridge|1"}},
+    {{"action": "NavigateTo", "target": "Apple|1"}},
+    {{"action": "PickUp", "target": "Apple|1"}}
   ]
 }}
 
