@@ -97,7 +97,12 @@ class ProcTHORActionAdapter:
 
         return True, "ok"
 
-    def to_thor_step(self, action_dict: dict[str, Any], graph_t: nx.DiGraph) -> tuple[dict[str, Any], bool, str]:
+    def to_thor_step(
+        self,
+        action_dict: dict[str, Any],
+        graph_t: nx.DiGraph,
+        scene_cache: dict[str, Any] | None = None,
+    ) -> tuple[dict[str, Any], bool, str]:
         valid, reason = self.validate_action_dict(action_dict)
         if not valid:
             return {}, False, reason
@@ -113,7 +118,12 @@ class ProcTHORActionAdapter:
             pos = node.get("pos")
             if not pos or len(pos) < 3:
                 return {}, False, f"target {target} missing pos"
-            x, y, z = pos
+            reachable = []
+            if scene_cache is not None:
+                reachable = scene_cache.get("reachable_positions", []) or []
+            if not reachable:
+                return {}, False, "reachable_positions unavailable for NavigateTo"
+            x, y, z = self._nearest_reachable(pos, reachable)
             thor_kwargs = {
                 "action": thor_action,
                 "x": float(x),
@@ -164,3 +174,17 @@ class ProcTHORActionAdapter:
         if not schema:
             return []
         return schema.allowed_keys()
+
+    def _nearest_reachable(self, target_pos: Any, reachable: list[dict[str, Any]]) -> tuple[float, float, float]:
+        tx, ty, tz = target_pos
+        best = reachable[0]
+        best_dist = float("inf")
+        for pos in reachable:
+            dx = pos.get("x", 0.0) - tx
+            dy = pos.get("y", 0.0) - ty
+            dz = pos.get("z", 0.0) - tz
+            dist = dx * dx + dy * dy + dz * dz
+            if dist < best_dist:
+                best = pos
+                best_dist = dist
+        return float(best.get("x", 0.0)), float(best.get("y", 0.0)), float(best.get("z", 0.0))

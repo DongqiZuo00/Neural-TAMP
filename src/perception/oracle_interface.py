@@ -64,6 +64,7 @@ class OracleInterface:
                 room_polygons.append((room_id, path))
 
         # --- 2. 处理物体节点 ---
+        parent_receptacles_map = {}
         for obj in metadata:
             if obj["objectType"] in self.ignore_categories: continue
             
@@ -84,18 +85,35 @@ class OracleInterface:
                     break 
 
             # 创建物体节点，写入 room_id
+            geometry = {
+                "pickupable": obj.get("pickupable", False),
+                "openable": obj.get("openable", False),
+                "receptacle": obj.get("receptacle", False),
+                "parentReceptacles": obj.get("parentReceptacles", []) or [],
+                "receptacleObjectIds": obj.get("receptacleObjectIds", []) or [],
+            }
             obj_node = Node(
                 id=obj["objectId"],
                 label=obj["objectType"],
                 pos=(pos["x"], pos["y"], pos["z"]),
                 bbox=obj["axisAlignedBoundingBox"],
                 state=state_dict,
+                geometry=geometry,
                 room_id=assigned_room_id # <--- 关键赋值
             )
             graph.add_node(obj_node)
+            parent_receptacles_map[obj_node.id] = geometry["parentReceptacles"]
             
             # 添加 Room -> contains -> Object 的 Edge
             if assigned_room_id:
                 graph.add_edge(Edge(source_id=assigned_room_id, target_id=obj_node.id, relation=Relation.CONTAINS))
+
+        # --- 3. 添加容器/支撑关系 (保守使用 INSIDE) ---
+        for obj_id, parents in parent_receptacles_map.items():
+            if not parents:
+                continue
+            parent_id = parents[0]
+            if parent_id in graph.nodes:
+                graph.add_edge(Edge(source_id=parent_id, target_id=obj_id, relation=Relation.INSIDE))
 
         return graph

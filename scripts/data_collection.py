@@ -95,14 +95,33 @@ def _random_action(graph: nx.DiGraph, rng: random.Random) -> dict[str, Any]:
     return action_dict
 
 
-def execute_action(env, adapter: ProcTHORActionAdapter, action: dict[str, Any], graph: nx.DiGraph) -> tuple[bool, str]:
+def get_reachable_positions(controller) -> list[dict[str, Any]]:
+    try:
+        event = controller.step(action="GetReachablePositions")
+    except Exception as exc:
+        print(f"[Reachable] Failed to query positions: {exc}")
+        return []
+    positions = event.metadata.get("actionReturn") or []
+    if not isinstance(positions, list):
+        print("[Reachable] Unexpected response for reachable positions")
+        return []
+    return positions
+
+
+def execute_action(
+    env,
+    adapter: ProcTHORActionAdapter,
+    action: dict[str, Any],
+    graph: nx.DiGraph,
+    scene_cache: dict[str, Any] | None = None,
+) -> tuple[bool, str]:
     controller = env.controller
 
     ok, reason = adapter.validate_action_dict(action)
     if not ok:
         return False, f"INVALID_ACTION_SCHEMA: {reason}"
 
-    thor_kwargs, ok, reason = adapter.to_thor_step(action, graph)
+    thor_kwargs, ok, reason = adapter.to_thor_step(action, graph, scene_cache=scene_cache)
     if not ok:
         return False, f"INVALID_ACTION_SCHEMA: {reason}"
 
@@ -124,6 +143,7 @@ def _collect_scene(
     rng: random.Random,
     stats: Counter,
     error_log: list[dict[str, Any]],
+    scene_cache: dict[str, Any],
 ) -> tuple[int, int]:
     from src.perception.oracle_interface import OracleInterface
 
@@ -145,7 +165,7 @@ def _collect_scene(
     for t in range(steps):
         graph_t = copy.deepcopy(manager.G)
         action = _random_action(graph_t, rng)
-        success, error_msg = execute_action(env, adapter, action, graph_t)
+        success, error_msg = execute_action(env, adapter, action, graph_t, scene_cache=scene_cache)
 
         sg_next = oracle.get_hierarchical_graph()
         manager.override_global_graph(sg_next)
@@ -208,6 +228,7 @@ def run_rollouts(
             for scene_index in range(num_scenes):
                 env.change_scene(scene_index)
                 scene_id = f"ProcTHOR-Train-{scene_index}"
+                scene_cache = {"reachable_positions": get_reachable_positions(env.controller)}
                 steps, valid = _collect_scene(
                     env=env,
                     scene_id=scene_id,
@@ -216,6 +237,7 @@ def run_rollouts(
                     rng=rng,
                     stats=stats,
                     error_log=error_log,
+                    scene_cache=scene_cache,
                 )
                 total_steps += steps
                 total_valid += valid
