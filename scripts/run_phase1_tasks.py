@@ -27,7 +27,6 @@ TASK_TYPES = [
     "A1_PICK_NAVIGATE_ROOM",
     "A2_PICK_PUT",
     "A3_PICK_OPEN",
-    "A4_PICK_PICK",
     "A5_OPEN_PICK",
     "A6_OPEN_PUT",
     "A7_OPEN_CLOSE",
@@ -39,8 +38,24 @@ TASK_TYPES = [
     "A13_PICK_CLOSE",
     "A14_CLOSE_OPEN",
     "A15_PICK_NAVIGATE_OBJ",
-    "A16_OPEN_PICK2",
 ]
+
+TASK_MAX_STEPS = {
+    "A1_PICK_NAVIGATE_ROOM": 4,
+    "A2_PICK_PUT": 6,
+    "A3_PICK_OPEN": 6,
+    "A5_OPEN_PICK": 6,
+    "A6_OPEN_PUT": 5,
+    "A7_OPEN_CLOSE": 4,
+    "A8_OPEN_NAVIGATE_ROOM": 5,
+    "A9_NAVIGATE_OBJ_PICK": 4,
+    "A10_NAVIGATE_OBJ_OPEN": 4,
+    "A11_NAVIGATE_ROOM_NAVIGATE_ROOM": 3,
+    "A12_NAVIGATE_OBJ_PUT": 5,
+    "A13_PICK_CLOSE": 5,
+    "A14_CLOSE_OPEN": 4,
+    "A15_PICK_NAVIGATE_OBJ": 5,
+}
 
 
 def _state_dict(node_data: dict[str, Any]) -> dict[str, Any]:
@@ -62,7 +77,7 @@ def _geometry_dict(node_data: dict[str, Any]) -> dict[str, Any]:
     return {}
 
 
-def build_inventory(scene_graph) -> dict[str, Any]:
+def build_inventory(scene_graph, reachable_positions: list[dict[str, Any]]) -> dict[str, Any]:
     rooms = []
     objects = []
     for node in scene_graph.nodes.values():
@@ -80,7 +95,7 @@ def build_inventory(scene_graph) -> dict[str, Any]:
                     "openable": bool(geometry.get("openable", False)),
                     "receptacle": bool(geometry.get("receptacle", False)),
                     "open_state": state.get("open_state", "none"),
-                    "parent_receptacles": geometry.get("parentReceptacles", []) or [],
+                    "held": state.get("held", False),
                 }
             )
 
@@ -88,6 +103,7 @@ def build_inventory(scene_graph) -> dict[str, Any]:
         "rooms": rooms,
         "objects": objects,
         "robot_pose": scene_graph.robot_pose,
+        "reachable_positions": reachable_positions,
     }
 
 
@@ -161,77 +177,90 @@ def generate_task(
     openable_closed = [obj for obj in openable if obj["open_state"] == "closed"]
 
     task_type = rng.choice(TASK_TYPES)
-    params: dict[str, Any] = {}
 
     if task_type == "A1_PICK_NAVIGATE_ROOM":
-        obj1 = _choose_pick_object(rng, pickupable, non_pickupable, noise_p_pick_bad)
-        room2 = _choose_room(rng, rooms, exclude_id=obj1["room_id"] if obj1 else None)
-        params = {"obj1": obj1["id"] if obj1 else None, "room2": room2["id"] if room2 else None}
-    elif task_type == "A2_PICK_PUT":
-        obj1 = _choose_pick_object(rng, pickupable, non_pickupable, noise_p_pick_bad)
+        obj = _choose_pick_object(rng, pickupable, non_pickupable, noise_p_pick_bad)
+        room2 = _choose_room(rng, rooms, exclude_id=obj["room_id"] if obj else None)
+        return {"task_type": task_type, "obj": obj["id"] if obj else None, "room": room2["id"] if room2 else None}
+    if task_type == "A2_PICK_PUT":
+        obj = _choose_pick_object(rng, pickupable, non_pickupable, noise_p_pick_bad)
         dest = _choose_receptacle(rng, receptacles, non_receptacles, noise_p_put_bad_dest)
-        params = {"obj1": obj1["id"] if obj1 else None, "dest": dest["id"] if dest else None}
-    elif task_type == "A3_PICK_OPEN":
-        obj1 = _choose_pick_object(rng, pickupable, non_pickupable, noise_p_pick_bad)
+        return {"task_type": task_type, "obj": obj["id"] if obj else None, "dest": dest["id"] if dest else None}
+    if task_type == "A3_PICK_OPEN":
+        obj = _choose_pick_object(rng, pickupable, non_pickupable, noise_p_pick_bad)
         container = _choose_open_container(rng, openable_closed or openable, non_openable, noise_p_open_bad)
-        params = {"obj1": obj1["id"] if obj1 else None, "container": container["id"] if container else None}
-    elif task_type == "A4_PICK_PICK":
-        obj1 = _choose_pick_object(rng, pickupable, non_pickupable, noise_p_pick_bad)
-        obj2 = _choose_pick_object(rng, pickupable, non_pickupable, noise_p_pick_bad)
-        params = {"obj1": obj1["id"] if obj1 else None, "obj2": obj2["id"] if obj2 else None}
-    elif task_type == "A5_OPEN_PICK":
+        return {
+            "task_type": task_type,
+            "obj": obj["id"] if obj else None,
+            "container": container["id"] if container else None,
+        }
+    if task_type == "A5_OPEN_PICK":
         container = _choose_open_container(rng, openable_closed or openable, non_openable, noise_p_open_bad)
-        contained = [obj for obj in objects if container and container["id"] in obj["parent_receptacles"]]
-        obj1 = _choose_pick_object(rng, contained, pickupable, noise_p_pick_bad)
-        params = {"container": container["id"] if container else None, "obj1": obj1["id"] if obj1 else None}
-    elif task_type == "A6_OPEN_PUT":
+        obj = _choose_pick_object(rng, pickupable, non_pickupable, noise_p_pick_bad)
+        return {
+            "task_type": task_type,
+            "container": container["id"] if container else None,
+            "obj": obj["id"] if obj else None,
+        }
+    if task_type == "A6_OPEN_PUT":
         container = _choose_open_container(rng, openable_closed or openable, non_openable, noise_p_open_bad)
-        obj1 = _choose_from(rng, pickupable, objects)
-        params = {"container": container["id"] if container else None, "obj1": obj1["id"] if obj1 else None}
-    elif task_type == "A7_OPEN_CLOSE":
+        obj = _choose_from(rng, pickupable, objects)
+        return {
+            "task_type": task_type,
+            "container": container["id"] if container else None,
+            "obj": obj["id"] if obj else None,
+        }
+    if task_type == "A7_OPEN_CLOSE":
         container = _choose_open_container(rng, openable_closed or openable, non_openable, noise_p_open_bad)
-        params = {"container": container["id"] if container else None}
-    elif task_type == "A8_OPEN_NAVIGATE_ROOM":
+        return {"task_type": task_type, "container": container["id"] if container else None}
+    if task_type == "A8_OPEN_NAVIGATE_ROOM":
         container = _choose_open_container(rng, openable_closed or openable, non_openable, noise_p_open_bad)
         room2 = _choose_room(rng, rooms, exclude_id=container["room_id"] if container else None)
-        params = {"container": container["id"] if container else None, "room2": room2["id"] if room2 else None}
-    elif task_type == "A9_NAVIGATE_OBJ_PICK":
-        obj1 = _choose_pick_object(rng, pickupable, non_pickupable, noise_p_pick_bad)
-        params = {"obj1": obj1["id"] if obj1 else None}
-    elif task_type == "A10_NAVIGATE_OBJ_OPEN":
+        return {
+            "task_type": task_type,
+            "container": container["id"] if container else None,
+            "room": room2["id"] if room2 else None,
+        }
+    if task_type == "A9_NAVIGATE_OBJ_PICK":
+        obj = _choose_pick_object(rng, pickupable, non_pickupable, noise_p_pick_bad)
+        return {"task_type": task_type, "obj": obj["id"] if obj else None}
+    if task_type == "A10_NAVIGATE_OBJ_OPEN":
         container = _choose_open_container(rng, openable_closed or openable, non_openable, noise_p_open_bad)
-        params = {"container": container["id"] if container else None}
-    elif task_type == "A11_NAVIGATE_ROOM_NAVIGATE_ROOM":
+        return {"task_type": task_type, "container": container["id"] if container else None}
+    if task_type == "A11_NAVIGATE_ROOM_NAVIGATE_ROOM":
         room1 = _choose_room(rng, rooms)
         room2 = _choose_room(rng, rooms, exclude_id=room1["id"] if room1 else None)
-        params = {"room1": room1["id"] if room1 else None, "room2": room2["id"] if room2 else None}
-    elif task_type == "A12_NAVIGATE_OBJ_PUT":
+        return {
+            "task_type": task_type,
+            "room_start": room1["id"] if room1 else None,
+            "room": room2["id"] if room2 else None,
+        }
+    if task_type == "A12_NAVIGATE_OBJ_PUT":
         dest = _choose_receptacle(rng, receptacles, non_receptacles, noise_p_put_bad_dest)
-        obj1 = _choose_from(rng, pickupable, objects)
-        params = {"dest": dest["id"] if dest else None, "obj1": obj1["id"] if obj1 else None}
-    elif task_type == "A13_PICK_CLOSE":
-        obj1 = _choose_pick_object(rng, pickupable, non_pickupable, noise_p_pick_bad)
+        obj = _choose_from(rng, pickupable, objects)
+        return {"task_type": task_type, "dest": dest["id"] if dest else None, "obj": obj["id"] if obj else None}
+    if task_type == "A13_PICK_CLOSE":
+        obj = _choose_pick_object(rng, pickupable, non_pickupable, noise_p_pick_bad)
         container = _choose_from(rng, openable_open or openable, objects)
-        params = {"obj1": obj1["id"] if obj1 else None, "container": container["id"] if container else None}
-    elif task_type == "A14_CLOSE_OPEN":
-        container = _choose_from(rng, openable_open or openable, objects)
-        params = {"container": container["id"] if container else None}
-    elif task_type == "A15_PICK_NAVIGATE_OBJ":
-        obj1 = _choose_pick_object(rng, pickupable, non_pickupable, noise_p_pick_bad)
-        other_objs = [obj for obj in objects if obj1 is None or obj["id"] != obj1["id"]]
-        obj2 = _choose_from(rng, other_objs, objects)
-        params = {"obj1": obj1["id"] if obj1 else None, "obj2": obj2["id"] if obj2 else None}
-    elif task_type == "A16_OPEN_PICK2":
-        container = _choose_open_container(rng, openable_closed or openable, non_openable, noise_p_open_bad)
-        obj1 = _choose_pick_object(rng, pickupable, non_pickupable, noise_p_pick_bad)
-        obj2 = _choose_pick_object(rng, pickupable, non_pickupable, noise_p_pick_bad)
-        params = {
+        return {
+            "task_type": task_type,
+            "obj": obj["id"] if obj else None,
             "container": container["id"] if container else None,
-            "obj1": obj1["id"] if obj1 else None,
-            "obj2": obj2["id"] if obj2 else None,
+        }
+    if task_type == "A14_CLOSE_OPEN":
+        container = _choose_from(rng, openable_open or openable, objects)
+        return {"task_type": task_type, "container": container["id"] if container else None}
+    if task_type == "A15_PICK_NAVIGATE_OBJ":
+        obj = _choose_pick_object(rng, pickupable, non_pickupable, noise_p_pick_bad)
+        other_objs = [candidate for candidate in objects if obj is None or candidate["id"] != obj["id"]]
+        obj2 = _choose_from(rng, other_objs, objects)
+        return {
+            "task_type": task_type,
+            "obj": obj["id"] if obj else None,
+            "target_obj": obj2["id"] if obj2 else None,
         }
 
-    return {"task_type": task_type, "params": params}
+    return {"task_type": task_type}
 
 
 def compile_task_to_actions(
@@ -240,110 +269,95 @@ def compile_task_to_actions(
     reachable_positions: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     task_type = task["task_type"]
-    params = task["params"]
     actions: list[dict[str, Any]] = []
 
     if task_type == "A1_PICK_NAVIGATE_ROOM":
         actions = [
-            {"action": "NavigateTo", "target": params.get("obj1")},
-            {"action": "PickUp", "target": params.get("obj1")},
-            {"action": "NavigateTo", "target": params.get("room2")},
+            {"action": "NavigateTo", "target": task.get("obj")},
+            {"action": "PickUp", "target": task.get("obj")},
+            {"action": "NavigateTo", "target": task.get("room")},
         ]
     elif task_type == "A2_PICK_PUT":
         actions = [
-            {"action": "NavigateTo", "target": params.get("obj1")},
-            {"action": "PickUp", "target": params.get("obj1")},
-            {"action": "NavigateTo", "target": params.get("dest")},
+            {"action": "NavigateTo", "target": task.get("obj")},
+            {"action": "PickUp", "target": task.get("obj")},
+            {"action": "NavigateTo", "target": task.get("dest")},
             {
                 "action": "PutObject",
-                "target": params.get("obj1"),
-                "receptacle_id": params.get("dest"),
+                "target": task.get("obj"),
+                "receptacle_id": task.get("dest"),
             },
         ]
     elif task_type == "A3_PICK_OPEN":
         actions = [
-            {"action": "NavigateTo", "target": params.get("obj1")},
-            {"action": "PickUp", "target": params.get("obj1")},
-            {"action": "NavigateTo", "target": params.get("container")},
-            {"action": "Open", "target": params.get("container")},
-        ]
-    elif task_type == "A4_PICK_PICK":
-        actions = [
-            {"action": "NavigateTo", "target": params.get("obj1")},
-            {"action": "PickUp", "target": params.get("obj1")},
-            {"action": "NavigateTo", "target": params.get("obj2")},
-            {"action": "PickUp", "target": params.get("obj2")},
+            {"action": "NavigateTo", "target": task.get("obj")},
+            {"action": "PickUp", "target": task.get("obj")},
+            {"action": "NavigateTo", "target": task.get("container")},
+            {"action": "Open", "target": task.get("container")},
         ]
     elif task_type == "A5_OPEN_PICK":
         actions = [
-            {"action": "NavigateTo", "target": params.get("container")},
-            {"action": "Open", "target": params.get("container")},
-            {"action": "NavigateTo", "target": params.get("obj1")},
-            {"action": "PickUp", "target": params.get("obj1")},
+            {"action": "NavigateTo", "target": task.get("container")},
+            {"action": "Open", "target": task.get("container")},
+            {"action": "NavigateTo", "target": task.get("obj")},
+            {"action": "PickUp", "target": task.get("obj")},
         ]
     elif task_type == "A6_OPEN_PUT":
         actions = [
-            {"action": "NavigateTo", "target": params.get("container")},
-            {"action": "Open", "target": params.get("container")},
-            {"action": "PutObject", "target": params.get("obj1")},
+            {"action": "NavigateTo", "target": task.get("container")},
+            {"action": "Open", "target": task.get("container")},
+            {"action": "PutObject", "target": task.get("obj")},
         ]
     elif task_type == "A7_OPEN_CLOSE":
         actions = [
-            {"action": "NavigateTo", "target": params.get("container")},
-            {"action": "Open", "target": params.get("container")},
-            {"action": "Close", "target": params.get("container")},
+            {"action": "NavigateTo", "target": task.get("container")},
+            {"action": "Open", "target": task.get("container")},
+            {"action": "Close", "target": task.get("container")},
         ]
     elif task_type == "A8_OPEN_NAVIGATE_ROOM":
         actions = [
-            {"action": "NavigateTo", "target": params.get("container")},
-            {"action": "Open", "target": params.get("container")},
-            {"action": "NavigateTo", "target": params.get("room2")},
+            {"action": "NavigateTo", "target": task.get("container")},
+            {"action": "Open", "target": task.get("container")},
+            {"action": "NavigateTo", "target": task.get("room")},
         ]
     elif task_type == "A9_NAVIGATE_OBJ_PICK":
         actions = [
-            {"action": "NavigateTo", "target": params.get("obj1")},
-            {"action": "PickUp", "target": params.get("obj1")},
+            {"action": "NavigateTo", "target": task.get("obj")},
+            {"action": "PickUp", "target": task.get("obj")},
         ]
     elif task_type == "A10_NAVIGATE_OBJ_OPEN":
         actions = [
-            {"action": "NavigateTo", "target": params.get("container")},
-            {"action": "Open", "target": params.get("container")},
+            {"action": "NavigateTo", "target": task.get("container")},
+            {"action": "Open", "target": task.get("container")},
         ]
     elif task_type == "A11_NAVIGATE_ROOM_NAVIGATE_ROOM":
         actions = [
-            {"action": "NavigateTo", "target": params.get("room1")},
-            {"action": "NavigateTo", "target": params.get("room2")},
+            {"action": "NavigateTo", "target": task.get("room_start")},
+            {"action": "NavigateTo", "target": task.get("room")},
         ]
     elif task_type == "A12_NAVIGATE_OBJ_PUT":
         actions = [
-            {"action": "NavigateTo", "target": params.get("dest")},
-            {"action": "PutObject", "target": params.get("obj1"), "receptacle_id": params.get("dest")},
+            {"action": "NavigateTo", "target": task.get("dest")},
+            {"action": "PutObject", "target": task.get("obj"), "receptacle_id": task.get("dest")},
         ]
     elif task_type == "A13_PICK_CLOSE":
         actions = [
-            {"action": "NavigateTo", "target": params.get("obj1")},
-            {"action": "PickUp", "target": params.get("obj1")},
-            {"action": "NavigateTo", "target": params.get("container")},
-            {"action": "Close", "target": params.get("container")},
+            {"action": "NavigateTo", "target": task.get("obj")},
+            {"action": "PickUp", "target": task.get("obj")},
+            {"action": "NavigateTo", "target": task.get("container")},
+            {"action": "Close", "target": task.get("container")},
         ]
     elif task_type == "A14_CLOSE_OPEN":
         actions = [
-            {"action": "NavigateTo", "target": params.get("container")},
-            {"action": "Close", "target": params.get("container")},
-            {"action": "Open", "target": params.get("container")},
+            {"action": "NavigateTo", "target": task.get("container")},
+            {"action": "Close", "target": task.get("container")},
+            {"action": "Open", "target": task.get("container")},
         ]
     elif task_type == "A15_PICK_NAVIGATE_OBJ":
         actions = [
-            {"action": "NavigateTo", "target": params.get("obj1")},
-            {"action": "PickUp", "target": params.get("obj1")},
-            {"action": "NavigateTo", "target": params.get("obj2")},
-        ]
-    elif task_type == "A16_OPEN_PICK2":
-        actions = [
-            {"action": "NavigateTo", "target": params.get("container")},
-            {"action": "Open", "target": params.get("container")},
-            {"action": "NavigateTo", "target": params.get("obj1")},
-            {"action": "PickUp", "target": params.get("obj1")},
+            {"action": "NavigateTo", "target": task.get("obj")},
+            {"action": "PickUp", "target": task.get("obj")},
+            {"action": "NavigateTo", "target": task.get("target_obj")},
         ]
 
     return [action for action in actions if action.get("target") is not None or action["action"] == "PutObject"]
@@ -379,20 +393,6 @@ def _is_held(G: nx.DiGraph, obj_id: str | None) -> bool:
     return False
 
 
-def _held_object_ids(G: nx.DiGraph) -> list[str]:
-    held = []
-    for node_id, data in G.nodes(data=True):
-        if data.get("type") != "object":
-            continue
-        if _state_dict(data).get("held"):
-            held.append(node_id)
-    robot_id = _get_robot_id(G)
-    for _, target, data in G.out_edges(robot_id, data=True):
-        if data.get("relation") == Relation.HOLDING and target not in held:
-            held.append(target)
-    return held
-
-
 def _is_open(G: nx.DiGraph, obj_id: str | None) -> bool:
     if not obj_id or obj_id not in G.nodes:
         return False
@@ -423,96 +423,49 @@ def _navigate_success(G: nx.DiGraph, target_id: str | None, threshold: float = 1
     return _near_position(robot_pos, list(target_pos), threshold=threshold)
 
 
-def _put_success(obj_id: str | None, G_start: nx.DiGraph, G_end: nx.DiGraph) -> tuple[bool, dict[str, Any]]:
-    meta: dict[str, Any] = {"partial": False}
-    if obj_id is None:
-        held_start = _held_object_ids(G_start)
-        if not held_start:
-            meta["reason"] = "no_held_object"
-            return False, meta
-        obj_id = held_start[0]
-    if obj_id not in G_end:
-        meta["reason"] = "object_missing"
-        return False, meta
-
-    held_end = _is_held(G_end, obj_id)
-    if not held_end:
-        on_relations = [
-            data.get("relation")
-            for _, _, data in G_end.out_edges(obj_id, data=True)
-            if data.get("relation") in {Relation.ON, Relation.INSIDE}
-        ]
-        meta["on_relations"] = on_relations
-        if not on_relations:
-            meta["partial"] = True
-        return True, meta
-    meta["reason"] = "still_held"
-    return False, meta
-
-
 def check_task_success(task: dict[str, Any], G_start: nx.DiGraph, G_end: nx.DiGraph) -> tuple[bool, dict[str, Any]]:
     task_type = task["task_type"]
-    params = task["params"]
     meta: dict[str, Any] = {"intents": {}}
 
     if task_type == "A1_PICK_NAVIGATE_ROOM":
-        meta["intents"]["pick"] = _is_held(G_end, params.get("obj1"))
-        meta["intents"]["navigate_room"] = _navigate_success(G_end, params.get("room2"))
+        meta["intents"]["pick"] = _is_held(G_end, task.get("obj"))
+        meta["intents"]["navigate_room"] = _navigate_success(G_end, task.get("room"))
     elif task_type == "A2_PICK_PUT":
-        put_ok, put_meta = _put_success(params.get("obj1"), G_start, G_end)
-        meta["intents"]["put"] = put_ok
-        meta["put_meta"] = put_meta
+        meta["intents"]["put"] = not _is_held(G_end, task.get("obj"))
     elif task_type == "A3_PICK_OPEN":
-        meta["intents"]["pick"] = _is_held(G_end, params.get("obj1"))
-        meta["intents"]["open"] = _is_open(G_end, params.get("container"))
-    elif task_type == "A4_PICK_PICK":
-        meta["intents"]["pick1"] = _is_held(G_end, params.get("obj1"))
-        meta["intents"]["pick2"] = _is_held(G_end, params.get("obj2"))
+        meta["intents"]["pick"] = _is_held(G_end, task.get("obj"))
+        meta["intents"]["open"] = _is_open(G_end, task.get("container"))
     elif task_type == "A5_OPEN_PICK":
-        meta["intents"]["open"] = _is_open(G_end, params.get("container"))
-        meta["intents"]["pick"] = _is_held(G_end, params.get("obj1"))
+        meta["intents"]["open"] = _is_open(G_end, task.get("container"))
+        meta["intents"]["pick"] = _is_held(G_end, task.get("obj"))
     elif task_type == "A6_OPEN_PUT":
-        meta["intents"]["open"] = _is_open(G_end, params.get("container"))
-        put_ok, put_meta = _put_success(params.get("obj1"), G_start, G_end)
-        meta["intents"]["put"] = put_ok
-        meta["put_meta"] = put_meta
+        meta["intents"]["open"] = _is_open(G_end, task.get("container"))
+        meta["intents"]["put"] = not _is_held(G_end, task.get("obj"))
     elif task_type == "A7_OPEN_CLOSE":
-        meta["intents"]["close"] = _is_closed(G_end, params.get("container"))
+        meta["intents"]["close"] = _is_closed(G_end, task.get("container"))
     elif task_type == "A8_OPEN_NAVIGATE_ROOM":
-        meta["intents"]["open"] = _is_open(G_end, params.get("container"))
-        meta["intents"]["navigate_room"] = _navigate_success(G_end, params.get("room2"))
+        meta["intents"]["open"] = _is_open(G_end, task.get("container"))
+        meta["intents"]["navigate_room"] = _navigate_success(G_end, task.get("room"))
     elif task_type == "A9_NAVIGATE_OBJ_PICK":
-        meta["intents"]["navigate_obj"] = _navigate_success(G_end, params.get("obj1"))
-        meta["intents"]["pick"] = _is_held(G_end, params.get("obj1"))
+        meta["intents"]["navigate_obj"] = _navigate_success(G_end, task.get("obj"))
+        meta["intents"]["pick"] = _is_held(G_end, task.get("obj"))
     elif task_type == "A10_NAVIGATE_OBJ_OPEN":
-        meta["intents"]["navigate_obj"] = _navigate_success(G_end, params.get("container"))
-        meta["intents"]["open"] = _is_open(G_end, params.get("container"))
+        meta["intents"]["navigate_obj"] = _navigate_success(G_end, task.get("container"))
+        meta["intents"]["open"] = _is_open(G_end, task.get("container"))
     elif task_type == "A11_NAVIGATE_ROOM_NAVIGATE_ROOM":
-        meta["intents"]["navigate_room2"] = _navigate_success(G_end, params.get("room2"))
+        meta["intents"]["navigate_room2"] = _navigate_success(G_end, task.get("room"))
     elif task_type == "A12_NAVIGATE_OBJ_PUT":
-        put_ok, put_meta = _put_success(params.get("obj1"), G_start, G_end)
-        meta["intents"]["put"] = put_ok
-        meta["put_meta"] = put_meta
+        meta["intents"]["put"] = not _is_held(G_end, task.get("obj"))
     elif task_type == "A13_PICK_CLOSE":
-        meta["intents"]["pick"] = _is_held(G_end, params.get("obj1"))
-        meta["intents"]["close"] = _is_closed(G_end, params.get("container"))
+        meta["intents"]["pick"] = _is_held(G_end, task.get("obj"))
+        meta["intents"]["close"] = _is_closed(G_end, task.get("container"))
     elif task_type == "A14_CLOSE_OPEN":
-        meta["intents"]["open"] = _is_open(G_end, params.get("container"))
+        meta["intents"]["open"] = _is_open(G_end, task.get("container"))
     elif task_type == "A15_PICK_NAVIGATE_OBJ":
-        meta["intents"]["pick"] = _is_held(G_end, params.get("obj1"))
-        meta["intents"]["navigate_obj"] = _navigate_success(G_end, params.get("obj2"))
-    elif task_type == "A16_OPEN_PICK2":
-        meta["intents"]["open"] = _is_open(G_end, params.get("container"))
-        meta["intents"]["pick1"] = _is_held(G_end, params.get("obj1"))
-        meta["intents"]["pick2"] = _is_held(G_end, params.get("obj2"))
+        meta["intents"]["pick"] = _is_held(G_end, task.get("obj"))
+        meta["intents"]["navigate_obj"] = _navigate_success(G_end, task.get("target_obj"))
 
     goal_satisfied = all(meta["intents"].values()) if meta["intents"] else False
-    if task_type == "A4_PICK_PICK":
-        goal_satisfied = meta["intents"].get("pick2", False) or meta["intents"].get("pick1", False)
-        meta["goal_override"] = "pick_any"
-    if task_type == "A16_OPEN_PICK2":
-        goal_satisfied = meta["intents"].get("open", False) and meta["intents"].get("pick1", False)
-        meta["goal_override"] = "open_and_pick1"
 
     return goal_satisfied, meta
 
@@ -536,7 +489,12 @@ def _print_episode_stats(
     total_steps = stats["total_steps"]
     env_fail = stats["env_fail_steps"]
     env_fail_rate = env_fail / total_steps if total_steps else 0.0
-    print(f"[Episode {episode_idx}] env_fail_rate={env_fail_rate:.2%} total_steps={total_steps}")
+    schema_invalid = stats["schema_invalid_steps"]
+    schema_invalid_rate = schema_invalid / total_steps if total_steps else 0.0
+    print(
+        f"[Episode {episode_idx}] env_fail_rate={env_fail_rate:.2%} "
+        f"schema_invalid_rate={schema_invalid_rate:.2%} total_steps={total_steps}"
+    )
 
     action_totals = {k.replace("_total", ""): v for k, v in action_stats.items() if k.endswith("_total")}
     for action, total in sorted(action_totals.items()):
@@ -603,7 +561,7 @@ def run_phase1_tasks(
                         error_log.append({"scene_id": scene_id, "episode_id": episode_id, "errors": errors})
                         continue
 
-                    inventory = build_inventory(sg)
+                    inventory = build_inventory(sg, scene_cache["reachable_positions"])
                     task = generate_task(
                         inventory,
                         rng,
@@ -611,17 +569,24 @@ def run_phase1_tasks(
                         noise_p_open_bad,
                         noise_p_put_bad_dest,
                     )
+                    task_params = {k: v for k, v in task.items() if k != "task_type"}
                     actions = compile_task_to_actions(
                         task,
                         inventory=inventory,
                         reachable_positions=scene_cache.get("reachable_positions", []),
                     )
                     actions = _maybe_swap_actions(rng, actions)
-                    actions = actions[:max_steps_per_episode]
+                    task_max_steps = TASK_MAX_STEPS.get(task["task_type"], max_steps_per_episode)
+                    max_steps = min(max_steps_per_episode, task_max_steps)
+                    actions = actions[:max_steps]
 
                     step_successes = []
+                    executed_actions: list[dict[str, Any]] = []
                     graph_start = copy.deepcopy(manager.G)
-                    for t, action in enumerate(actions):
+                    retry_used: dict[tuple[str, str | None], bool] = {}
+                    t = 0
+                    while t < len(actions) and t < max_steps:
+                        action = actions[t]
                         graph_t = copy.deepcopy(manager.G)
                         try:
                             success, error_msg = execute_action(
@@ -644,6 +609,10 @@ def run_phase1_tasks(
                                     "errors": errors,
                                 }
                             )
+                            stats["schema_invalid_steps"] += 1
+
+                        if error_msg.startswith("INVALID_ACTION_SCHEMA"):
+                            stats["api_schema_rejected_steps"] += 1
 
                         stats["total_steps"] += 1
                         if success:
@@ -657,7 +626,7 @@ def run_phase1_tasks(
                             "episode_id": episode_id,
                             "t": t,
                             "task_type": task["task_type"],
-                            "task_params": task["params"],
+                            "task_params": task_params,
                             "action": action,
                             "success": success,
                             "error_msg": error_msg,
@@ -667,8 +636,23 @@ def run_phase1_tasks(
                         }
                         step_handle.write(json.dumps(step_entry) + "\n")
                         step_successes.append(success)
+                        executed_actions.append(action)
+                        if (
+                            not success
+                            and action["action"] in {"PickUp", "Open"}
+                            and t + 2 <= max_steps
+                        ):
+                            retry_key = (action["action"], action.get("target"))
+                            if not retry_used.get(retry_key, False):
+                                retry_used[retry_key] = True
+                                retry_actions = [
+                                    {"action": "NavigateTo", "target": action.get("target")},
+                                    {"action": action["action"], "target": action.get("target")},
+                                ]
+                                actions[t + 1 : t + 1] = retry_actions
+                        t += 1
 
-                    goal_satisfied, goal_meta = check_task_success(task, graph_start, manager.G)
+                    goal_satisfied, _ = check_task_success(task, graph_start, manager.G)
                     task_stats[task["task_type"]] += 1
                     if goal_satisfied:
                         task_success_stats[task["task_type"]] += 1
@@ -677,13 +661,11 @@ def run_phase1_tasks(
                         "scene_id": scene_id,
                         "episode_id": episode_id,
                         "task_type": task["task_type"],
-                        "task_params": task["params"],
-                        "actions": actions,
+                        "task_params": task_params,
+                        "actions": executed_actions,
                         "step_successes": step_successes,
                         "goal_satisfied": goal_satisfied,
-                        "goal_meta": goal_meta,
-                        "num_steps": len(actions),
-                        "success_count": sum(step_successes),
+                        "num_steps": len(executed_actions),
                     }
                     episode_handle.write(json.dumps(episode_entry) + "\n")
 
