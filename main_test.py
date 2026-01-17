@@ -11,11 +11,13 @@ if current_dir not in sys.path:
 
 from src.env.procthor_wrapper import ProcTHOREnv
 from src.env.action_adapter import ProcTHORActionAdapter
-from src.env.action_visibility import ensure_object_visible
+from src.env.action_visibility import ensure_object_visible, should_check_visibility
+from src.env.visibility_recovery import ensure_visible_or_navigate
 from src.memory.graph_manager import GraphManager
 from src.perception.oracle_interface import OracleInterface
 from src.task.task_generator import TaskGenerator
 from src.planning.decomposer import TaskDecomposer
+from src.planning.semantic_mapper import map_actions_to_scene
 from scripts.data_collection import export_graph_canonical, graph_diff, sanitize_graph, execute_action, get_reachable_positions
 
 
@@ -105,10 +107,13 @@ def main():
             current_sg = memory.to_scene_graph()
 
             actions = _plan_actions_for_subgoal(planner, subgoal, current_sg)
+            mapping = map_actions_to_scene(actions, current_sg)
+            actions = mapping.actions
             action_results = []
             subgoal_success = True
             subgoal_executable = True
             reject_reason = ""
+            mapping_notes = mapping.corrections
 
             if not actions:
                 subgoal_success = False
@@ -121,8 +126,31 @@ def main():
                         scan_target = action.get("receptacle_id") or target_id
                     else:
                         scan_target = target_id
-                    if scan_target:
+                    if scan_target and should_check_visibility(action.get("action", "")):
                         visible = ensure_object_visible(env.controller, scan_target)
+                        if not visible:
+                            recovery = ensure_visible_or_navigate(
+                                env=env,
+                                adapter=adapter,
+                                target_id=scan_target,
+                                graph=memory.G,
+                                scene_cache=scene_cache,
+                            )
+                            if not recovery.ok:
+                                success = False
+                                error_msg = recovery.reason or "object_not_visible_after_scan"
+                                action_results.append(
+                                    {
+                                        "action": action,
+                                        "success": success,
+                                        "error_msg": error_msg,
+                                    }
+                                )
+                                subgoal_success = False
+                                subgoal_executable = False
+                                reject_reason = error_msg
+                                break
+                            visible = True
                         if not visible:
                             success = False
                             error_msg = "object_not_visible_after_scan"
@@ -160,6 +188,7 @@ def main():
                     "subgoal": subgoal,
                     "actions": actions,
                     "action_results": action_results,
+                    "mapping_corrections": mapping_notes,
                     "success": subgoal_success,
                     "executable": subgoal_executable,
                     "reject_reason": reject_reason,
