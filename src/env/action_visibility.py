@@ -58,3 +58,7 @@ def scan_for_object(controller, object_id: str, rotations: int = 4, look_angle: 
 
 def ensure_object_visible(controller, object_id: str) -> bool:
     return scan_for_object(controller, object_id)
+
+
+def should_check_visibility(action_name: str) -> bool:
+    return action_name not in {"NavigateTo"}
