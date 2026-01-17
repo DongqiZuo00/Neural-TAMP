@@ -12,6 +12,7 @@ if current_dir not in sys.path:
 from src.env.procthor_wrapper import ProcTHOREnv
 from src.env.action_adapter import ProcTHORActionAdapter
 from src.env.action_visibility import ensure_object_visible, should_check_visibility
+from src.env.visibility_recovery import ensure_visible_or_navigate
 from src.memory.graph_manager import GraphManager
 from src.perception.oracle_interface import OracleInterface
 from src.task.task_generator import TaskGenerator
@@ -127,6 +128,29 @@ def main():
                         scan_target = target_id
                     if scan_target and should_check_visibility(action.get("action", "")):
                         visible = ensure_object_visible(env.controller, scan_target)
+                        if not visible:
+                            recovery = ensure_visible_or_navigate(
+                                env=env,
+                                adapter=adapter,
+                                target_id=scan_target,
+                                graph=memory.G,
+                                scene_cache=scene_cache,
+                            )
+                            if not recovery.ok:
+                                success = False
+                                error_msg = recovery.reason or "object_not_visible_after_scan"
+                                action_results.append(
+                                    {
+                                        "action": action,
+                                        "success": success,
+                                        "error_msg": error_msg,
+                                    }
+                                )
+                                subgoal_success = False
+                                subgoal_executable = False
+                                reject_reason = error_msg
+                                break
+                            visible = True
                         if not visible:
                             success = False
                             error_msg = "object_not_visible_after_scan"
