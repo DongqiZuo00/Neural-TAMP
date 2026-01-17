@@ -12,6 +12,7 @@ import networkx as nx
 
 from src.core.graph_schema import CANONICAL_RELATIONS, Relation, normalize_state
 from src.env.action_adapter import ProcTHORActionAdapter
+from src.env.action_preconditions import check_action_preconditions
 from src.memory.graph_manager import GraphManager, sync_bidirectional_edges, validate_graph_schema
 
 
@@ -116,6 +117,10 @@ def execute_action(
     scene_cache: dict[str, Any] | None = None,
 ) -> tuple[bool, str]:
     controller = env.controller
+
+    preconditions = check_action_preconditions(action, graph)
+    if not preconditions.ok:
+        return False, f"AFFORDANCE_MISMATCH: {preconditions.reason}"
 
     ok, reason = adapter.validate_action_dict(action)
     if not ok:
