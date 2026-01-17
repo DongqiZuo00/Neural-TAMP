@@ -48,7 +48,7 @@ def main():
         oracle = OracleInterface(env)
         memory = GraphManager(save_dir="Neural-TAMP/memory_data")
         task_gen = TaskGenerator()
-        planner = TaskDecomposer(model_name="gpt-4o")
+        planner = TaskDecomposer(model_name="Qwen2.5-32B")
         adapter = ProcTHORActionAdapter()
         print("✅ Modules Ready.")
     except Exception as e:
