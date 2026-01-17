@@ -16,6 +16,7 @@ from src.memory.graph_manager import GraphManager
 from src.perception.oracle_interface import OracleInterface
 from src.task.task_generator import TaskGenerator
 from src.planning.decomposer import TaskDecomposer
+from src.core.graph_schema import Relation
 from scripts.data_collection import export_graph_canonical, graph_diff, sanitize_graph, execute_action, get_reachable_positions
 
 
@@ -33,6 +34,52 @@ def _plan_actions_for_subgoal(planner: TaskDecomposer, subgoal, scene_graph):
 
 def _is_executable_error(error_msg: str) -> bool:
     return not error_msg.startswith("INVALID_ACTION_SCHEMA") and not error_msg.startswith("API_SCHEMA_BUG")
+
+
+def _is_visibility_error(error_msg: str) -> bool:
+    lowered = error_msg.lower()
+    return "visibility" in lowered or "not found within the specified visibility" in lowered
+
+
+def _find_robot_id(graph) -> str | None:
+    for node_id, data in graph.nodes(data=True):
+        if data.get("type") == "agent":
+            return node_id
+    if "robot_agent" in graph.nodes:
+        return "robot_agent"
+    return None
+
+
+def _is_holding_target(graph, target_id: str) -> bool:
+    if not target_id:
+        return False
+    robot_id = _find_robot_id(graph)
+    if not robot_id:
+        return False
+    for _, target, data in graph.out_edges(robot_id, data=True):
+        if data.get("relation") == Relation.HOLDING and target == target_id:
+            return True
+    return False
+
+
+def execute_with_executor(env, adapter, action, graph, scene_cache, retries: int = 2) -> tuple[bool, str]:
+    success, error_msg = execute_action(env, adapter, action, graph, scene_cache=scene_cache)
+    if success:
+        return success, error_msg
+    if action.get("action") == "NavigateTo":
+        return success, error_msg
+    if not _is_visibility_error(error_msg):
+        return success, error_msg
+
+    for _ in range(retries):
+        ensure_object_visible(env.controller, action.get("target"))
+        success, error_msg = execute_action(env, adapter, action, graph, scene_cache=scene_cache)
+        if success:
+            return success, error_msg
+        if not _is_visibility_error(error_msg):
+            return success, error_msg
+
+    return success, error_msg
 
 
 def main():
@@ -120,25 +167,56 @@ def main():
                 reject_reason = "no_actions_generated"
             else:
                 for action in actions:
-                    target_id = action.get("target")
-                    if target_id:
-                        visible = ensure_object_visible(env.controller, target_id)
-                        if not visible:
-                            success = False
-                            error_msg = "object_not_visible_after_scan"
+                    if action.get("action") == "PutObject":
+                        target_id = action.get("target")
+                        receptacle_id = action.get("receptacle_id")
+                        if target_id and not _is_holding_target(memory.G, target_id):
+                            prep_actions = [
+                                {"action": "NavigateTo", "target": target_id},
+                                {"action": "PickUp", "target": target_id},
+                            ]
+                            for prep_action in prep_actions:
+                                success, error_msg = execute_with_executor(
+                                    env, adapter, prep_action, memory.G, scene_cache
+                                )
+                                action_results.append(
+                                    {
+                                        "action": prep_action,
+                                        "success": success,
+                                        "error_msg": error_msg,
+                                    }
+                                )
+                                if not success:
+                                    subgoal_success = False
+                                if not _is_executable_error(error_msg):
+                                    subgoal_executable = False
+                                if not success:
+                                    reject_reason = error_msg or "action_failed"
+                                    break
+
+                        if subgoal_success and receptacle_id:
+                            nav_action = {"action": "NavigateTo", "target": receptacle_id}
+                            success, error_msg = execute_with_executor(
+                                env, adapter, nav_action, memory.G, scene_cache
+                            )
                             action_results.append(
                                 {
-                                    "action": action,
+                                    "action": nav_action,
                                     "success": success,
                                     "error_msg": error_msg,
                                 }
                             )
-                            subgoal_success = False
-                            subgoal_executable = False
-                            reject_reason = error_msg
+                            if not success:
+                                subgoal_success = False
+                            if not _is_executable_error(error_msg):
+                                subgoal_executable = False
+                            if not success:
+                                reject_reason = error_msg or "action_failed"
+
+                        if not subgoal_success:
                             break
 
-                    success, error_msg = execute_action(env, adapter, action, memory.G, scene_cache=scene_cache)
+                    success, error_msg = execute_with_executor(env, adapter, action, memory.G, scene_cache)
                     action_results.append(
                         {
                             "action": action,
