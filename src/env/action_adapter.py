@@ -143,6 +143,8 @@ class ProcTHORActionAdapter:
         if thor_action in {"OpenObject", "CloseObject", "PickupObject"}:
             target = action_dict.get("target")
             thor_kwargs = {"action": thor_action, "objectId": target}
+            if thor_action == "PickupObject":
+                thor_kwargs["forceAction"] = True
             return thor_kwargs, True, "ok"
 
         if thor_action == "PutObject":
