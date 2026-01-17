@@ -12,6 +12,7 @@ from src.memory.graph_manager import GraphManager
 from src.perception.oracle_interface import OracleInterface
 from src.core.graph_schema import normalize_state
 from scripts.data_collection import execute_action, get_reachable_positions
+from src.env.visibility_recovery import ensure_visible_or_navigate
 
 
 def _find_object_by_affordance(graph, *, pickupable=False, receptacle=False, openable=None):
@@ -93,6 +94,19 @@ def main():
     print(json.dumps(actions, indent=2))
 
     for step, action in enumerate(actions):
+        if action["action"] != "NavigateTo":
+            visibility = ensure_visible_or_navigate(
+                env,
+                adapter,
+                action.get("target"),
+                memory.G,
+                scene_cache=scene_cache,
+            )
+            if not visibility.ok:
+                print(
+                    f"Step {step}: visibility recovery ❌ {visibility.reason}"
+                )
+                break
         success, error_msg = execute_action(env, adapter, action, memory.G, scene_cache=scene_cache)
         status = "✅" if success else "❌"
         print(f"Step {step}: {action['action']} {status} {error_msg}")
