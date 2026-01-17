@@ -19,19 +19,36 @@ def scan_for_object(controller, object_id: str, rotations: int = 4, look_angle: 
     if object_id in _get_visible_object_ids(controller):
         return True
 
+    def _step(action: str, **kwargs) -> bool:
+        try:
+            event = controller.step(action=action, **kwargs)
+        except Exception as exc:
+            print(f"[Visibility] Failed to step {action}: {exc}")
+            return False
+        success = event.metadata.get("lastActionSuccess")
+        if success is False:
+            error_msg = event.metadata.get("errorMessage") or ""
+            print(f"[Visibility] Step {action} failed: {error_msg}")
+            return False
+        return True
+
     for _ in range(rotations):
-        controller.step(action="LookUp", degrees=look_angle)
+        if not _step("LookUp", degrees=look_angle):
+            return False
         if object_id in _get_visible_object_ids(controller):
-            controller.step(action="LookDown", degrees=look_angle)
+            _step("LookDown", degrees=look_angle)
             return True
 
-        controller.step(action="LookDown", degrees=look_angle * 2)
+        if not _step("LookDown", degrees=look_angle * 2):
+            return False
         if object_id in _get_visible_object_ids(controller):
-            controller.step(action="LookUp", degrees=look_angle)
+            _step("LookUp", degrees=look_angle)
             return True
 
-        controller.step(action="LookUp", degrees=look_angle)
-        controller.step(action="RotateRight", degrees=90)
+        if not _step("LookUp", degrees=look_angle):
+            return False
+        if not _step("RotateRight", degrees=90):
+            return False
 
         if object_id in _get_visible_object_ids(controller):
             return True

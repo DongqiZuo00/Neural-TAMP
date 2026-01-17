@@ -31,10 +31,6 @@ def _plan_actions_for_subgoal(planner: TaskDecomposer, subgoal, scene_graph):
     return result.get("actions", [])
 
 
-def _is_executable_error(error_msg: str) -> bool:
-    return not error_msg.startswith("INVALID_ACTION_SCHEMA") and not error_msg.startswith("API_SCHEMA_BUG")
-
-
 def main():
     print("=" * 60)
     print("🚀 Neural-TAMP: LLM Planner Data Collection")
@@ -121,8 +117,12 @@ def main():
             else:
                 for action in actions:
                     target_id = action.get("target")
-                    if target_id:
-                        visible = ensure_object_visible(env.controller, target_id)
+                    if action.get("action") == "PutObject":
+                        scan_target = action.get("receptacle_id") or target_id
+                    else:
+                        scan_target = target_id
+                    if scan_target:
+                        visible = ensure_object_visible(env.controller, scan_target)
                         if not visible:
                             success = False
                             error_msg = "object_not_visible_after_scan"
@@ -148,9 +148,7 @@ def main():
                     )
                     if not success:
                         subgoal_success = False
-                    if not _is_executable_error(error_msg):
                         subgoal_executable = False
-                    if not success:
                         reject_reason = error_msg or "action_failed"
                         break
 
