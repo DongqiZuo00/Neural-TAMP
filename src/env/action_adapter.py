@@ -48,7 +48,7 @@ class ProcTHORActionAdapter:
         ),
         "PutObject": ActionSchema(
             thor_action="PutObject",
-            required_keys=frozenset({"action", "objectId"}),
+            required_keys=frozenset({"action", "objectId", "receptacleObjectId"}),
         ),
     }
 
@@ -87,7 +87,12 @@ class ProcTHORActionAdapter:
             return False, "target must be a string"
 
         receptacle_id = action_dict.get("receptacle_id")
-        if receptacle_id is not None and not isinstance(receptacle_id, str):
+        if action == "PutObject":
+            if receptacle_id is None:
+                return False, "PutObject requires receptacle_id"
+            if not isinstance(receptacle_id, str):
+                return False, "receptacle_id must be a string"
+        elif receptacle_id is not None and not isinstance(receptacle_id, str):
             return False, "receptacle_id must be a string"
 
         allowed_fields = {"action", "target", "receptacle_id"}
@@ -145,9 +150,14 @@ class ProcTHORActionAdapter:
             object_id = target or self._find_held_object(graph_t)
             if not object_id:
                 return {}, False, "no target or held object for PutObject"
-            thor_kwargs = {"action": thor_action, "objectId": object_id}
-            if action_dict.get("receptacle_id"):
-                return thor_kwargs, True, "ignored receptacle_id for Phase 1"
+            receptacle_id = action_dict.get("receptacle_id")
+            if not receptacle_id:
+                return {}, False, "missing receptacle_id for PutObject"
+            thor_kwargs = {
+                "action": thor_action,
+                "objectId": object_id,
+                "receptacleObjectId": receptacle_id,
+            }
             return thor_kwargs, True, "ok"
 
         return {}, False, f"unhandled action mapping: {thor_action}"
