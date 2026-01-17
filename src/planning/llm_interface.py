@@ -126,7 +126,7 @@ class LLMInterface:
                 model=self.model,
                 messages=repair_messages,
                 temperature=0.0,
-                max_tokens=512,
+                max_tokens=2048,
             )
             repaired = repair_response.choices[0].message.content
             if not repaired:
