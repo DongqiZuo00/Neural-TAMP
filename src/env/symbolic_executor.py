@@ -135,10 +135,12 @@ def _is_holding_any(scene_graph: nx.DiGraph) -> bool:
     robot_id = _find_robot_id(scene_graph)
     if not robot_id:
         return False
-    for _, _, data in scene_graph.out_edges(robot_id, data=True):
+    for _, target, data in scene_graph.out_edges(robot_id, data=True):
         if data.get("relation") == Relation.HOLDING:
             return True
-    return False
+        if _is_held_state(scene_graph, target):
+            return True
+    return _any_held_state(scene_graph)
 
 
 def _is_holding(scene_graph: nx.DiGraph, obj_id: str | None) -> bool:
@@ -147,7 +149,9 @@ def _is_holding(scene_graph: nx.DiGraph, obj_id: str | None) -> bool:
     robot_id = _find_robot_id(scene_graph)
     if not robot_id:
         return False
-    return scene_graph.has_edge(robot_id, obj_id) and scene_graph.edges[robot_id, obj_id].get("relation") == Relation.HOLDING
+    if scene_graph.has_edge(robot_id, obj_id) and scene_graph.edges[robot_id, obj_id].get("relation") == Relation.HOLDING:
+        return True
+    return _is_held_state(scene_graph, obj_id)
 
 
 def _open_state(scene_graph: nx.DiGraph, obj_id: str | None) -> str | None:
@@ -155,6 +159,23 @@ def _open_state(scene_graph: nx.DiGraph, obj_id: str | None) -> str | None:
         return None
     state = normalize_state(scene_graph.nodes[obj_id].get("state"))
     return state.get("open_state")
+
+
+def _is_held_state(scene_graph: nx.DiGraph, obj_id: str | None) -> bool:
+    if not obj_id or obj_id not in scene_graph:
+        return False
+    state = normalize_state(scene_graph.nodes[obj_id].get("state"))
+    return bool(state.get("held"))
+
+
+def _any_held_state(scene_graph: nx.DiGraph) -> bool:
+    for node_id, data in scene_graph.nodes(data=True):
+        if data.get("type") != "object":
+            continue
+        state = normalize_state(data.get("state"))
+        if state.get("held"):
+            return True
+    return False
 
 
 def _has_affordance(scene_graph: nx.DiGraph, obj_id: str | None, affordance: str) -> bool:
