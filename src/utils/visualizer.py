@@ -3,6 +3,7 @@ import matplotlib.patches as patches
 import os
 import math
 import numpy as np
+from src.core.graph_schema import CANONICAL_RELATIONS, PHYSICAL_RELATIONS, Relation
 
 class BEVVisualizer:
     def __init__(self, save_dir="Neural-TAMP/vis_output"):
@@ -18,7 +19,7 @@ class BEVVisualizer:
             (1.0, 0.8, 1.0, 0.3), # 紫
         ]
 
-    def render(self, scene_graph, filename="bev.png"):
+    def render(self, scene_graph, filename="bev.png", show_relations="canonical"):
         fig, ax = plt.subplots(figsize=(10, 10))
         
         # 1. 先画房间的地板 (多边形)
@@ -48,8 +49,15 @@ class BEVVisualizer:
                 ax.text(cx, cz, f"{room.label}\n{area_text}", ha='center', va='center', fontsize=9, fontweight='bold')
 
         # 2. 画连接线 (Edge)
+        if show_relations == "canonical":
+            relation_filter = CANONICAL_RELATIONS
+        else:
+            relation_filter = PHYSICAL_RELATIONS
+
         for edge in scene_graph.edges:
-            if edge.relation == "contains": continue # 不画房间包含关系，太乱了
+            if edge.relation not in relation_filter:
+                continue
+            if edge.relation == Relation.CONTAINS: continue # 不画房间包含关系，太乱了
             
             if edge.source_id in scene_graph.nodes and edge.target_id in scene_graph.nodes:
                 n1 = scene_graph.nodes[edge.source_id]
