@@ -141,16 +141,15 @@ def _scene_cache(env) -> dict[str, Any]:
 
 
 def _receptacle_xy_from_metadata(env, receptacle_id: str) -> tuple[float, float] | None:
-    event = env.controller.last_event
-    if event is None:
+    try:
+        event = env.controller.step(action="GetObjectScreenPosition", objectId=receptacle_id)
+    except Exception as exc:
+        raise RuntimeError(f"API_SCHEMA_BUG: {exc}") from exc
+    if not event.metadata.get("lastActionSuccess"):
         return None
-    objects = event.metadata.get("objects") or []
-    for obj in objects:
-        if obj.get("objectId") != receptacle_id:
-            continue
-        pos = obj.get("position") or {}
-        if "x" in pos and "z" in pos:
-            return float(pos["x"]), float(pos["z"])
+    screen_pos = event.metadata.get("actionReturn") or {}
+    if "x" in screen_pos and "y" in screen_pos:
+        return float(screen_pos["x"]), float(screen_pos["y"])
     return None
 
 
