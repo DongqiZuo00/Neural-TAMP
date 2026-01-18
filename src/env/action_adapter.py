@@ -48,7 +48,7 @@ class ProcTHORActionAdapter:
         ),
         "PutObject": ActionSchema(
             thor_action="PutObject",
-            required_keys=frozenset({"action", "objectId", "receptacleObjectId"}),
+            required_keys=frozenset({"action", "objectId"}),
         ),
     }
 
@@ -149,16 +149,15 @@ class ProcTHORActionAdapter:
 
         if thor_action == "PutObject":
             target = action_dict.get("target")
-            object_id = target or self._find_held_object(graph_t)
-            if not object_id:
-                return {}, False, "no target or held object for PutObject"
             receptacle_id = action_dict.get("receptacle_id")
             if not receptacle_id:
                 return {}, False, "missing receptacle_id for PutObject"
+            object_id = target or self._find_held_object(graph_t)
+            if not object_id:
+                return {}, False, "no target or held object for PutObject"
             thor_kwargs = {
                 "action": thor_action,
-                "objectId": object_id,
-                "receptacleObjectId": receptacle_id,
+                "objectId": receptacle_id,
             }
             return thor_kwargs, True, "ok"
 
