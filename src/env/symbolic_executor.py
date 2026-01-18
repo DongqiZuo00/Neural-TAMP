@@ -93,6 +93,21 @@ def _execute_thor_action(
     scene_graph: nx.DiGraph,
     scene_cache: dict[str, Any] | None = None,
 ) -> tuple[bool, str]:
+    if action.get("action") == "PutObject":
+        receptacle_id = action.get("receptacle_id")
+        if not receptacle_id:
+            return False, "missing receptacle_id for PutObject"
+        xy = _receptacle_xy_from_metadata(env, receptacle_id)
+        if xy is None:
+            return False, "receptacle_xy_unavailable"
+        thor_kwargs = {
+            "action": "PutObject",
+            "x": float(xy[0]),
+            "y": float(xy[1]),
+            "forceAction": True,
+        }
+        return _step_controller(env, thor_kwargs)
+
     thor_kwargs, ok, reason = adapter.to_thor_step(action, scene_graph, scene_cache=scene_cache)
     if not ok:
         return False, f"INVALID_ACTION_SCHEMA: {reason}"
@@ -100,11 +115,14 @@ def _execute_thor_action(
     if thor_kwargs.get("action") in {"OpenObject", "CloseObject", "PickupObject", "PutObject"}:
         thor_kwargs["forceAction"] = True
 
+    return _step_controller(env, thor_kwargs)
+
+
+def _step_controller(env, thor_kwargs: dict[str, Any]) -> tuple[bool, str]:
     try:
         event = env.controller.step(**thor_kwargs)
     except Exception as exc:
         raise RuntimeError(f"API_SCHEMA_BUG: {exc}") from exc
-
     success = bool(event.metadata.get("lastActionSuccess"))
     error_msg = event.metadata.get("errorMessage") or ""
     return success, error_msg
@@ -120,6 +138,20 @@ def _scene_cache(env) -> dict[str, Any]:
     if not isinstance(positions, list):
         positions = []
     return {"reachable_positions": positions}
+
+
+def _receptacle_xy_from_metadata(env, receptacle_id: str) -> tuple[float, float] | None:
+    event = env.controller.last_event
+    if event is None:
+        return None
+    objects = event.metadata.get("objects") or []
+    for obj in objects:
+        if obj.get("objectId") != receptacle_id:
+            continue
+        pos = obj.get("position") or {}
+        if "x" in pos and "z" in pos:
+            return float(pos["x"]), float(pos["z"])
+    return None
 
 
 def _find_robot_id(scene_graph: nx.DiGraph) -> str | None:
