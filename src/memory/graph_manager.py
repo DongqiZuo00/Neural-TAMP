@@ -258,3 +258,22 @@ class GraphManager:
                         if reverse_relation not in GEOMETRIC_RELATIONS:
                             continue
                     self.G.add_edge(u, v, relation=Relation.NEAR, distance=float(dist))
+
+        robot_id = self.robot_id if self.robot_id in self.G.nodes else None
+        if robot_id:
+            robot_pos = self.G.nodes[robot_id].get("pos")
+            if robot_pos is not None:
+                robot_pos = np.array(robot_pos)
+                for obj_id in obj_nodes:
+                    obj_pos = np.array(self.G.nodes[obj_id]["pos"])
+                    dist = np.linalg.norm(robot_pos - obj_pos)
+                    if dist < 1.0:
+                        if self.G.has_edge(robot_id, obj_id):
+                            existing_relation = self.G.edges[robot_id, obj_id].get("relation")
+                            if existing_relation not in GEOMETRIC_RELATIONS:
+                                continue
+                        if self.G.has_edge(obj_id, robot_id):
+                            reverse_relation = self.G.edges[obj_id, robot_id].get("relation")
+                            if reverse_relation not in GEOMETRIC_RELATIONS:
+                                continue
+                        self.G.add_edge(robot_id, obj_id, relation=Relation.NEAR, distance=float(dist))
